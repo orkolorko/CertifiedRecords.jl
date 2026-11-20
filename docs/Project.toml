@@ -1,0 +1,6 @@
+[deps]
+CertifiedRecords = "a1382eeb-e40a-4ccf-aad2-2f06b8114ecb"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+
+[sources]
+CertifiedRecords = {path = ".."}
