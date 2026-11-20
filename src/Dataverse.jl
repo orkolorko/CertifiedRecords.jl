@@ -7,9 +7,10 @@
 # skips Dataverse's tabular ingest, so a TSV is not converted to its own tabular format.
 
 export DATAVERSE_HARVARD, DataverseFile, default_token_file, dataverse_files,
-       dataverse_download, file_checksum
-# dataverse_add and dataverse_replace are not exported until they have been run against an
-# installation (demo.dataverse.org, with a token of that installation); see their docstrings.
+       dataverse_download, dataverse_add, file_checksum
+# dataverse_replace is not exported until it has been run against an installation; see its
+# docstring. dataverse_add was first run on 2026-11-20, 49 files into the draft of
+# doi:10.7910/DVN/OWADFA on dataverse.harvard.edu, each downloaded back byte for byte.
 
 const DATAVERSE_HARVARD = "https://dataverse.harvard.edu"
 
@@ -100,20 +101,29 @@ end
 
 Download `f` to the path `dest` and verify its size and checksum against the listing;
 an ingested tabular file is downloaded in its original uploaded form (`format=original`),
-the one the checksum is of. A file that does not verify is deleted and an error raised.
+the one the checksum is of. The download goes to a temporary file beside `dest`, which is
+moved onto `dest` only once it verifies; if the transfer fails or the file does not verify,
+the temporary file is removed, `dest` is left as it was, and an error is raised.
 """
 function dataverse_download(f::DataverseFile, dest::AbstractString;
                             server::AbstractString = DATAVERSE_HARVARD, token_file = nothing)
     url = "$server/api/access/datafile/$(f.id)"
     query = f.tabular ? ["format" => "original"] : Pair{String,String}[]
-    mkpath(dirname(abspath(dest)))
-    open(dest, "w") do io
-        HTTP.get(url, _headers(token_file); query = query, response_stream = io)
-    end
-    got = file_checksum(dest, f.checksum_type)
-    if got != f.checksum || (!f.tabular && filesize(dest) != f.size)
-        rm(dest; force = true)
-        error("$(f.label): downloaded $(f.checksum_type) $got, listed $(f.checksum)")
+    dir = dirname(abspath(dest))
+    mkpath(dir)
+    tmp, io = mktemp(dir)
+    try
+        try
+            HTTP.get(url, _headers(token_file); query = query, response_stream = io)
+        finally
+            close(io)
+        end
+        got = file_checksum(tmp, f.checksum_type)
+        (got == f.checksum && (f.tabular || filesize(tmp) == f.size)) ||
+            error("$(f.label): downloaded $(f.checksum_type) $got and $(filesize(tmp)) bytes, listed $(f.checksum) and $(f.size)")
+        mv(tmp, dest; force = true)
+    finally
+        rm(tmp; force = true)
     end
     return dest
 end
@@ -128,13 +138,14 @@ function _json_data(directory, description; replace = false)
 end
 
 function _upload(url, path, json, token_file)
-    form = HTTP.Form(["file" => HTTP.Multipart(basename(path), open(path), "application/octet-stream"),
-                      "jsonData" => json])
-    r = HTTP.post(url, _headers(token_file), form)
-    f = DataverseFile(only(_json(r)["files"]))
+    f = open(path) do io
+        form = HTTP.Form(["file" => HTTP.Multipart(basename(path), io, "application/octet-stream"),
+                          "jsonData" => json])
+        DataverseFile(only(_json(HTTP.post(url, _headers(token_file), form))["files"]))
+    end
     got = file_checksum(path, f.checksum_type)
-    got == f.checksum ||
-        error("$(f.label): Dataverse stored $(f.checksum_type) $(f.checksum), the local file has $got")
+    (got == f.checksum && f.size == filesize(path)) ||
+        error("$(f.label): Dataverse stored $(f.checksum_type) $(f.checksum) and $(f.size) bytes, the local file has $got and $(filesize(path))")
     return f
 end
 
@@ -144,10 +155,10 @@ end
 Add the file at `path` to the draft of dataset `doi`, under `directory` in the dataset,
 with tabular ingest skipped so that it is stored byte for byte; the checksum Dataverse
 reports is compared with the local one. Creates a draft version if the dataset has none.
-Nothing is published.
+Nothing is published. The size Dataverse reports is compared with the local one as well.
 
-Not yet run against an installation: the request follows the API Guide (v6.12), and the
-form of the response is read as the listing's, which is checked only for the listing.
+Run against dataverse.harvard.edu on 2026-11-20 (49 files, directory labels of two levels,
+no tabular ingest), and exercised by the token-gated live test.
 """
 function dataverse_add(doi::AbstractString, path::AbstractString;
                        directory::AbstractString = "", description::AbstractString = "",

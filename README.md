@@ -11,12 +11,16 @@ The records of certified computations, shared by the experiment packages:
   its own precision, with the precision, so that it is read back exactly;
 - `open_record`, `append_record`, `read_record`, `recorded_keys`: tab-separated records,
   read back by a driver to continue a run or to re-certify it row by row;
-- `dataverse_files`, `dataverse_download`: the files of a Dataverse dataset version, and a
-  download verified against the listed checksum (native API).
+- `dataverse_files`, `dataverse_download`, `dataverse_add`: the files of a Dataverse dataset
+  version, a download verified against the listed size and checksum, and a file added to a
+  draft, verified against the size and checksum the installation reports (native API).
 
-Depositing (`dataverse_add`, `dataverse_replace`) is written but not exported until it has
-been run against an installation.
+`dataverse_replace` is written but not exported until it has been run against an
+installation.
 
     CERTIFIEDRECORDS_LIVE=1 julia --project=. -e 'using Pkg; Pkg.test()'
 
-runs, besides the offline tests, read-only downloads from two published Harvard datasets.
+runs, besides the offline tests, read-only downloads from two published Harvard datasets;
+with `CERTIFIEDRECORDS_LIVE_WRITE=1` and `CERTIFIEDRECORDS_SCRATCH_DOI=<a dataset whose draft
+may be written to>` it also adds one small file to that draft, downloads it back and deletes
+it, with the token in `default_token_file()`.

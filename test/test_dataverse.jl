@@ -1,5 +1,6 @@
 using CertifiedRecords
 using CertifiedRecords: _json_data
+import HTTP
 using Test
 import JSON
 
@@ -48,6 +49,28 @@ end
     @test r["forceReplace"] == false && !haskey(r, "restrict")
 end
 
+@testset "download: a failed transfer or a wrong checksum leaves dest as it was" begin
+    body = "certified\n"
+    srv = HTTP.serve!(_ -> HTTP.Response(200, body), "127.0.0.1", 0)
+    port = HTTP.port(srv)
+    try
+        dir = mktempdir()
+        dest = joinpath(dir, "rec.tsv")
+        write(dest, "previous")
+        good = DataverseFile(1, "rec.tsv", "", sizeof(body), "MD5",
+                             bytes2hex(CertifiedRecords.MD5.md5(body)), false)
+        bad = DataverseFile(1, "rec.tsv", "", sizeof(body), "MD5", "0"^32, false)
+        @test_throws ErrorException dataverse_download(bad, dest; server = "http://127.0.0.1:$port")
+        @test read(dest, String) == "previous" && readdir(dir) == ["rec.tsv"]
+        @test_throws Exception dataverse_download(good, dest; server = "http://127.0.0.1:1")
+        @test read(dest, String) == "previous" && readdir(dir) == ["rec.tsv"]
+        @test dataverse_download(good, dest; server = "http://127.0.0.1:$port") == dest
+        @test read(dest, String) == body && readdir(dir) == ["rec.tsv"]
+    finally
+        close(srv)
+    end
+end
+
 # Read-only calls to dataverse.harvard.edu on two published datasets; set
 # CERTIFIEDRECORDS_LIVE=1 to run them. Nothing is written to the installation.
 if get(ENV, "CERTIFIEDRECORDS_LIVE", "0") == "1"
@@ -63,5 +86,31 @@ if get(ENV, "CERTIFIEDRECORDS_LIVE", "0") == "1"
         @test t.tabular
         q = dataverse_download(t, joinpath(dir, "original"))
         @test file_checksum(q, t.checksum_type) == t.checksum
+    end
+end
+
+# Writes to an installation: set CERTIFIEDRECORDS_LIVE_WRITE=1 and CERTIFIEDRECORDS_SCRATCH_DOI
+# to the persistent id of a dataset whose draft may be written to, with the token in
+# default_token_file() (or DATAVERSE_TOKEN_FILE). One small file is added to the draft under
+# certifiedrecords-test/, downloaded back, compared byte for byte and deleted again; nothing
+# is published.
+if get(ENV, "CERTIFIEDRECORDS_LIVE_WRITE", "0") == "1"
+    @testset "live, add and download on a scratch draft" begin
+        doi, tok = ENV["CERTIFIEDRECORDS_SCRATCH_DOI"], default_token_file()
+        dir = mktempdir()
+        src = joinpath(dir, "certifiedrecords_test_$(time_ns()).tsv")
+        write(src, "x\tlo\thi\n0.1\t0x1.9999999999999p-4\t0x1.999999999999ap-4\n")
+        f = dataverse_add(doi, src; directory = "certifiedrecords-test", token_file = tok)
+        try
+            @test f.label == basename(src) && f.directory == "certifiedrecords-test"
+            @test f.size == filesize(src) && !f.tabular
+            listed = only(filter(x -> x.id == f.id, dataverse_files(doi; version = ":draft", token_file = tok)))
+            @test listed.checksum == f.checksum && listed.directory == "certifiedrecords-test"
+            back = dataverse_download(listed, joinpath(dir, "back.tsv"); token_file = tok)
+            @test read(back) == read(src)
+        finally
+            HTTP.delete("$(DATAVERSE_HARVARD)/api/files/$(f.id)", CertifiedRecords._headers(tok))
+        end
+        @test !any(x -> x.id == f.id, dataverse_files(doi; version = ":draft", token_file = tok))
     end
 end
