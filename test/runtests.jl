@@ -1,6 +1,5 @@
 using CertifiedRecords
 using Test
 
-@testset "CertifiedRecords.jl" begin
-    # Write your tests here.
-end
+include("test_records.jl")
+include("test_dataverse.jl")

@@ -1,7 +1,29 @@
 name = "CertifiedRecords"
 uuid = "a1382eeb-e40a-4ccf-aad2-2f06b8114ecb"
-authors = ["Isaia Nisoli"]
 version = "0.0.1-DEV"
+authors = ["Isaia Nisoli"]
+
+[deps]
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+MD5 = "6ac74813-4b46-53a4-afec-0b5dc9d7885c"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+
+[weakdeps]
+Arblib = "fb37089c-8514-4489-9461-98f9c8763369"
+IntervalArithmetic = "d1acc4aa-44c8-5952-acd4-ba5d80a2a253"
+
+[extensions]
+CertifiedRecordsArblibExt = "Arblib"
+CertifiedRecordsIntervalArithmeticExt = "IntervalArithmetic"
 
 [compat]
+Arblib = "1"
+IntervalArithmetic = "1"
+HTTP = "2.16.0"
+JSON = "1.13.4"
+MD5 = "0.2.3"
+Printf = "1.11.0"
+SHA = "1.0.0"
 julia = "1.12"
