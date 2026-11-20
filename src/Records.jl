@@ -8,7 +8,7 @@
 # until that package moves to this one.
 
 export run_header, Upper, fmt_upper, write_endpoint, read_endpoint,
-       open_record, append_record, read_record, recorded_keys
+       open_record, append_record, read_record, recorded_keys, latest_record
 
 @doc raw"""
     run_header(mod, script; params...) -> String
@@ -151,4 +151,20 @@ does not exist. A driver's continue mode skips the keys already on record.
 function recorded_keys(file::AbstractString, columns::AbstractString...)
     isfile(file) || return Set{NTuple{length(columns),String}}()
     return Set(Tuple(d[c] for c in columns) for d in last(read_record(file)))
+end
+
+"""
+    latest_record(dir, prefix; host = gethostname()) -> path
+
+The record `dir/prefix.<commit>.<host>.tsv` written last, by modification time, among those of
+every commit, where `<commit>` is the short hash `run_header` records (or `unknown`); an error if
+there is none. A driver writes one record per commit, so a reader of another driver's results
+should name the file this returns.
+"""
+function latest_record(dir::AbstractString, prefix::AbstractString; host::AbstractString = gethostname())
+    ok(f) = startswith(f, prefix * ".") && endswith(f, ".$host.tsv") &&
+            occursin(r"^[0-9a-z]+$", chop(f; head = ncodeunits(prefix) + 1, tail = ncodeunits(host) + 5))
+    fs = filter(ok, readdir(dir))
+    isempty(fs) && error("no record $prefix.<commit>.$host.tsv in $dir")
+    return joinpath(dir, fs[argmax([mtime(joinpath(dir, f)) for f in fs])])
 end

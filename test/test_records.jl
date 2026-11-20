@@ -67,3 +67,17 @@ end
     open(io -> println(io, "x\t1"), f, "a")
     @test_throws ErrorException read_record(f)
 end
+
+@testset "latest record" begin
+    d = mktempdir()
+    for (f, t) in (("ex.lanford.abc1234.host1.tsv", 1), ("ex.lanford.def5678.host1.tsv", 3),
+                   ("ex.lanford.0123abc.host2.tsv", 5), ("ex.lanford_noise.9999999.host1.tsv", 7),
+                   ("ex.lanford.x.y.host1.tsv", 9))
+        write(joinpath(d, f), "")
+        run(`touch -d @$(1_700_000_000 + t) $(joinpath(d, f))`)
+    end
+    @test basename(latest_record(d, "ex.lanford"; host = "host1")) == "ex.lanford.def5678.host1.tsv"
+    @test basename(latest_record(d, "ex.lanford"; host = "host2")) == "ex.lanford.0123abc.host2.tsv"
+    @test basename(latest_record(d, "ex.lanford_noise"; host = "host1")) == "ex.lanford_noise.9999999.host1.tsv"
+    @test_throws ErrorException latest_record(d, "ex.doubling"; host = "host1")
+end
