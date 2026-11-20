@@ -13,11 +13,18 @@ import JSON
     @test_throws ArgumentError file_checksum(f, "CRC32")
 end
 
-@testset "token" begin
+@testset "token file" begin
     f = tempname()
     write(f, "  abc-123\n")
-    @test dataverse_token(f) == "abc-123"
-    @test_throws ErrorException dataverse_token(f * ".none")
+    @test CertifiedRecords._headers(f) == ["X-Dataverse-key" => "abc-123"]
+    @test isempty(CertifiedRecords._headers(nothing))
+    @test_throws ErrorException CertifiedRecords._headers(f * ".none")
+    withenv("DATAVERSE_TOKEN_FILE" => f) do
+        @test default_token_file() == f
+    end
+    withenv("DATAVERSE_TOKEN_FILE" => nothing) do
+        @test default_token_file() == joinpath(homedir(), ".config", "wtools", "dataverse-token")
+    end
 end
 
 @testset "listing and request bodies" begin
