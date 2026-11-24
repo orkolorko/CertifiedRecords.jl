@@ -49,6 +49,11 @@ end
     end
     d, b = write_endpoint(0.1)
     @test read_endpoint(d, b) == 0.1
+    # a subnormal double: its shortest decimal, 5.0e-324, is another number at 53 bits
+    for x in (5e-324, -3 * 5e-324, floatmin(Float64) / 3)
+        d, b = write_endpoint(x)
+        @test read_endpoint(d, b) == x && parse(Float64, d) === x
+    end
 end
 
 @testset "records" begin
@@ -110,4 +115,63 @@ end
     finally
         Base.set_active_project(old)
     end
+end
+
+@testset "upper bounds written exactly" begin
+    @test upper_bound(0.1) === 0.1
+    @test upper_bound(big(1) / 3) >= big(1) / 3 && upper_bound(big(1) / 3) isa Float64
+    @test upper_bound(big(1) / 3) == nextfloat(Float64(big(1) / 3, RoundDown))
+    @test upper_bound(interval(1, 2)) === 2.0
+    a = Arb(1) / 3
+    @test upper_bound(a) >= getinterval(BigFloat, a)[2]
+    @test upper_bound(a) == Float64(getinterval(BigFloat, a)[2], RoundUp)
+    @test isinf(upper_bound(Inf)) && isnan(upper_bound(NaN))
+    for x in (0.1, 1 / 3, 6.02e23, 5e-324, 1.7976931348623157e308)
+        d, b = write_upper(x)
+        @test b == 53 && read_upper(d, b) == x && read_double(d) === x
+    end
+    d, b = write_upper(a)
+    @test read_upper(d, b) == upper_bound(a)
+    d, b = write_upper(a, BigFloat)
+    @test b == precision(BigFloat) && read_upper(d, b) >= getinterval(BigFloat, a)[2]
+end
+
+@testset "intervals written exactly" begin
+    lo, hi, b = write_interval(0.1, 0.3)
+    @test (lo, hi, b) == ("0.1", "0.3", 53)
+    r = Dict("l" => lo, "h" => hi, "b" => string(b))
+    @test read_interval(r, "l", "h", "b") == (big(0.1), big(0.3))
+    a = Arb("0.285"; prec = 256)
+    lo, hi, b = write_interval(a)
+    @test b == 256
+    L, H = read_interval(Dict("l" => lo, "h" => hi, "b" => string(b)), "l", "h", "b")
+    @test (L, H) == getinterval(BigFloat, a) && L <= big"0.285" <= H
+    @test write_interval(interval(1, 2))[1:2] == ("1.0", "2.0")
+    @test write_interval(NaN, NaN)[1] == "NaN"
+    @test_throws ArgumentError write_interval(2.0, 1.0)
+    @test_throws ArgumentError write_interval(1.0, big(2.0))
+end
+
+@testset "read_double" begin
+    @test read_double("0.30000000000000004") === 0.1 + 0.2
+    @test read_double("0.5") === 0.5 && read_double("0.50") === 0.5
+    @test read_double("Inf") === Inf && isnan(read_double("NaN"))
+    @test_throws ArgumentError read_double("0.3000000000000000")
+    @test_throws ArgumentError read_double("1.234567e-01")
+end
+
+@testset "summary records" begin
+    f = joinpath(mktempdir(), "s.tsv")
+    open_record(f, "# t\n", SUMMARY_COLUMNS)
+    a = Arb(1) / 3
+    for row in (summary_row("n", "count", 7), summary_row("r", "upper", a),
+                summary_row("x", "exact", 0.1), summary_row("l", "lo", big(1) / 7),
+                summary_row("u", "upper", 2.5))
+        append_record(f, row)
+    end
+    s = read_summary(f)
+    @test s["n"] === 7 && s["x"] == 0.1 && s["u"] == 2.5
+    @test s["r"] == upper_bound(a) && s["r"] >= 1 / big(3)
+    @test s["l"] == big(1) / 7 && precision(s["l"]) == precision(BigFloat)
+    @test_throws ArgumentError summary_row("q", "nearly", 1.0)
 end

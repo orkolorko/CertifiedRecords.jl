@@ -8,7 +8,9 @@
 # until that package moves to this one.
 
 export run_header, Upper, fmt_upper, write_endpoint, read_endpoint,
-       open_record, append_record, read_record, recorded_keys, latest_record, save_environment
+       open_record, append_record, read_record, recorded_keys, latest_record,
+       upper_bound, write_upper, read_upper, write_interval, read_interval, read_double,
+       SUMMARY_COLUMNS, summary_row, read_summary, save_environment
 
 @doc raw"""
     run_header(mod, script; params...) -> String
@@ -79,9 +81,14 @@ end
 An interval endpoint as the shortest decimal that gives `x` back at its own precision,
 and that precision. [`read_endpoint`](@ref) inverts it exactly; reading the decimal at
 any other precision does not, because the shortest decimal round-trips only at the
-precision it was written for.
+precision it was written for.  A subnormal `x` has fewer significant bits than its type,
+and the shortest decimal that gives it back in that type is read at its precision as a
+different number (`5.0e-324` against the double `4.94e-324`), so it is written as the
+shortest decimal of the same number as a `BigFloat` of that precision.
 """
 write_endpoint(x::AbstractFloat) = (string(x), precision(x))
+write_endpoint(x::Union{Float16,Float32,Float64}) =
+    (issubnormal(x) ? string(BigFloat(x; precision = precision(x))) : string(x), precision(x))
 
 """
     read_endpoint(digits, bits) -> BigFloat
@@ -92,6 +99,120 @@ read_endpoint(digits::AbstractString, bits::Integer) =
     BigFloat(digits; precision = Int(bits))
 read_endpoint(digits::AbstractString, bits::AbstractString) =
     read_endpoint(digits, parse(Int, bits))
+
+"""
+    upper_bound(x, T = Float64) -> T
+
+An upper bound on `x` in the floating-point type `T`: a real rounded up to `T`; an interval
+of IntervalArithmetic through its supremum and an Arblib ball through the upper end of the
+interval enclosing it, by the extensions.  `Inf` and `NaN` stay what they are.
+"""
+upper_bound(x::Real, ::Type{T} = Float64) where {T<:AbstractFloat} = T(x, RoundUp)
+
+"""
+    write_upper(x, T = Float64) -> (digits, bits)
+
+An upper bound written exactly: [`upper_bound`](@ref) of `x` in `T`, written by
+[`write_endpoint`](@ref), so that [`read_upper`](@ref) gives back that bound and not a
+decimal near it.  [`fmt_upper`](@ref) prints seven digits for a person to read; this is
+what a driver writes where the bound will be read back.
+"""
+write_upper(x, ::Type{T} = Float64) where {T<:AbstractFloat} = write_endpoint(upper_bound(x, T))
+
+"""
+    read_upper(digits, bits) -> BigFloat
+
+An upper bound written by [`write_upper`](@ref), read back exactly at its own precision.
+"""
+read_upper(digits::AbstractString, bits) = read_endpoint(digits, bits)
+
+"""
+    write_interval(lo, hi) -> (lo_digits, hi_digits, bits)
+    write_interval(x) -> (lo_digits, hi_digits, bits)
+
+The two ends of an enclosure written by [`write_endpoint`](@ref), and their common
+precision, for three columns of a record.  An interval of IntervalArithmetic is written
+through its infimum and supremum and an Arblib ball through the interval enclosing it,
+rounded outward at the precision of the ball, by the extensions.  A pair of `NaN`, which a
+driver writes where it has no enclosure, is accepted; an inverted pair is not.
+"""
+function write_interval(lo::AbstractFloat, hi::AbstractFloat)
+    precision(lo) == precision(hi) ||
+        throw(ArgumentError("write_interval: the ends have precisions $(precision(lo)) and $(precision(hi))"))
+    lo <= hi || (isnan(lo) && isnan(hi)) ||
+        throw(ArgumentError("write_interval: $lo > $hi"))
+    return (write_endpoint(lo)[1], write_endpoint(hi)[1], precision(lo))
+end
+
+"""
+    read_interval(row, lo, hi, bits) -> (BigFloat, BigFloat)
+
+The ends of an enclosure that a row of [`read_record`](@ref) holds in the columns `lo`, `hi`
+and `bits`, read back exactly at their own precision.
+"""
+read_interval(row::AbstractDict, lo, hi, bits) =
+    (read_endpoint(row[lo], row[bits]), read_endpoint(row[hi], row[bits]))
+
+"""
+    read_double(digits) -> Float64
+
+A double a record holds, written in full: the decimal [`write_endpoint`](@ref) writes for it
+at 53 bits, the one `string` writes, or a decimal exactly equal to it.  An error
+if the decimal is not a double, so that a value rounded on the way into a record is not read
+as though it had not been.  `Inf`, `-Inf` and `NaN` are read as themselves.
+"""
+function read_double(s::AbstractString)
+    x = parse(Float64, s)
+    (isnan(x) || isinf(x) || s == write_endpoint(x)[1] || s == string(x) ||
+     BigFloat(s; precision = 1100) == x) ||
+        throw(ArgumentError("read_double: $s is not a double written in full"))
+    return x
+end
+
+"""
+    SUMMARY_COLUMNS
+
+The columns of a summary record, `quantity`, `kind`, `value` and `bits`; see
+[`summary_row`](@ref).
+"""
+const SUMMARY_COLUMNS = ["quantity", "kind", "value", "bits"]
+
+"""
+    summary_row(quantity, kind, value) -> Vector{Any}
+
+The columns of the record of the numbers a text quotes, and one row of it.  `kind` says what
+the number is: `upper`, an upper bound, written as [`upper_bound`](@ref) of the value in its
+own precision (a double for an Arblib ball or an interval); `lower`, a lower bound, and
+`exact`, a value or a choice; `lo` and `hi`, an end of an enclosure; `count`, an integer.
+Every float is written in full, with its precision in `bits`.
+"""
+function summary_row(q::AbstractString, kind::AbstractString, v)
+    kind in ("upper", "lower", "exact", "lo", "hi", "count") ||
+        throw(ArgumentError("summary_row: kind $kind"))
+    # an Arblib ball is an AbstractFloat and is not a value written exactly: it goes through
+    # upper_bound like an interval does
+    plain = v isa Base.IEEEFloat || v isa BigFloat || v isa Integer || v isa AbstractString
+    val = kind == "upper" && !plain ? upper_bound(v) : v
+    plain || kind == "upper" ||
+        throw(ArgumentError("summary_row: a $(typeof(v)) is written as an upper bound only"))
+    return Any[q, kind, val isa AbstractFloat ? write_endpoint(val)[1] : val,
+               val isa AbstractFloat ? precision(val) : ""]
+end
+
+"""
+    read_summary(path) -> Dict{String,Any}
+
+The numbers of a summary record written with [`summary_row`](@ref), by name: a float read
+back exactly at the precision in its `bits` (a `BigFloat`), a count as an `Int`.
+"""
+function read_summary(path::AbstractString)
+    out = Dict{String,Any}()
+    for d in last(read_record(path))
+        v = d["value"]
+        out[d["quantity"]] = d["kind"] == "count" ? parse(Int, v) : read_endpoint(v, d["bits"])
+    end
+    return out
+end
 
 """
     open_record(file, header, columns) -> Bool
