@@ -81,3 +81,33 @@ end
     @test basename(latest_record(d, "ex.lanford_noise"; host = "host1")) == "ex.lanford_noise.9999999.host1.tsv"
     @test_throws ErrorException latest_record(d, "ex.doubling"; host = "host1")
 end
+
+@testset "save_environment" begin
+    env = mktempdir(); dep = mktempdir()
+    run(pipeline(`git -C $dep init -q`, devnull)); write(joinpath(dep, "f"), "x")
+    run(`git -C $dep add f`); run(`git -C $dep -c user.name=t -c user.email=t@t commit -q -m c`)
+    commit = readchomp(`git -C $dep rev-parse --short HEAD`)
+    write(joinpath(env, "Project.toml"), "name = \"E\"\n")
+    write(joinpath(env, "Manifest.toml"), """
+        [[deps.Dep]]
+        path = "$dep"
+        uuid = "00000000-0000-0000-0000-000000000001"
+
+        [[deps.Own]]
+        path = "."
+        """)
+    old = Base.active_project()
+    try
+        Base.set_active_project(joinpath(env, "Project.toml"))
+        rec = joinpath(mktempdir(), "x.abc123.host.tsv")
+        name = save_environment(rec)
+        @test startswith(name, "x.abc123.host.") && endswith(name, ".Manifest.toml")
+        text = read(joinpath(dirname(rec), name), String)
+        @test startswith(text, read(joinpath(env, "Manifest.toml"), String))
+        @test occursin("# path Dep $dep $commit clean", text) && !occursin("# path Own", text)
+        write(joinpath(dep, "f"), "y")
+        @test occursin("$commit dirty", read(joinpath(dirname(rec), save_environment(rec * "2")), String))
+    finally
+        Base.set_active_project(old)
+    end
+end

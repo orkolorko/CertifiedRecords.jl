@@ -8,7 +8,7 @@
 # until that package moves to this one.
 
 export run_header, Upper, fmt_upper, write_endpoint, read_endpoint,
-       open_record, append_record, read_record, recorded_keys, latest_record
+       open_record, append_record, read_record, recorded_keys, latest_record, save_environment
 
 @doc raw"""
     run_header(mod, script; params...) -> String
@@ -167,4 +167,47 @@ function latest_record(dir::AbstractString, prefix::AbstractString; host::Abstra
     fs = filter(ok, readdir(dir))
     isempty(fs) && error("no record $prefix.<commit>.$host.tsv in $dir")
     return joinpath(dir, fs[argmax([mtime(joinpath(dir, f)) for f in fs])])
+end
+
+"""
+    save_environment(record) -> String
+
+Copy the `Manifest.toml` of the active project next to `record`, as
+`<record without .tsv>.<time>.Manifest.toml`, and return its file name, for a driver to write
+in a column of the rows it appends.  A dependency the Manifest gives by `path` (a working copy,
+which the Manifest alone cannot reconstruct) is listed below the copy, as a TOML comment, with
+the commit its checkout is at and whether its tracked files differ from it:
+
+    # path RigorousInvariantMeasures /home/isaia/Code/RigorousInvariantMeasures.jl 87aed84 clean
+
+so that every row names the exact versions of every package that produced it.  An error if the
+active project has no Manifest.
+"""
+function save_environment(record::AbstractString)
+    project = Base.active_project()
+    project === nothing && error("save_environment: no active project")
+    manifest = joinpath(dirname(project), "Manifest.toml")
+    isfile(manifest) || error("save_environment: $manifest does not exist")
+    base = endswith(record, ".tsv") ? record[1:end-4] : record
+    file = "$base.$(Libc.strftime("%Y%m%dT%H%M%S", time())).Manifest.toml"
+    lines = String[]
+    current = ""
+    for line in eachline(manifest)
+        m = match(r"^\[\[deps\.(.+)\]\]$", strip(line))
+        m === nothing || (current = m.captures[1])
+        p = match(r"^\s*path\s*=\s*\"(.*)\"\s*$", line)
+        if p !== nothing && p.captures[1] != "."
+            dir = isabspath(p.captures[1]) ? p.captures[1] : normpath(joinpath(dirname(manifest), p.captures[1]))
+            commit = try readchomp(`git -C $dir rev-parse --short HEAD`) catch; "unknown" end
+            dirty = try !isempty(readchomp(`git -C $dir status --porcelain --untracked-files=no`)) catch; true end
+            push!(lines, "# path $current $dir $commit $(dirty ? "dirty" : "clean")")
+        end
+    end
+    mkpath(dirname(abspath(file)))
+    open(file, "w") do io
+        write(io, read(manifest, String))
+        isempty(lines) || println(io, "\n# The dependencies given by path, at the commits of their checkouts:")
+        foreach(l -> println(io, l), lines)
+    end
+    return basename(file)
 end
