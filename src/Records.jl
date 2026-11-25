@@ -8,7 +8,7 @@
 # until that package moves to this one.
 
 export run_header, Upper, fmt_upper, write_endpoint, read_endpoint,
-       open_record, append_record, read_record, recorded_keys, latest_record,
+       open_record, append_record, read_record, recorded_keys, latest_record, records,
        upper_bound, write_upper, read_upper, write_interval, read_interval, read_double,
        SUMMARY_COLUMNS, summary_row, read_summary, save_environment
 
