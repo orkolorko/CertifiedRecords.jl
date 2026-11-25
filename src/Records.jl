@@ -50,14 +50,12 @@ end
 @doc raw"""
     fmt_upper(x; digits = 7) -> String
 
-`digits` significant digits of an upper bound, written so that the decimal written is at
-least the bound. The bound `b` is converted to BigFloat exactly, multiplied by
-``1 + 10^{1-d}`` (by ``1 - 10^{1-d}`` when ``b < 0``), ``d`` = `digits`, and rounded to nearest at
-``d`` significant digits, which moves it by at most a relative ``\tfrac12 10^{1-d}``; so the
-decimal is at least ``b(1 + 10^{1-d})(1 - \tfrac12 10^{1-d})(1 - 2^{-p}) \ge b`` at a precision
-``p \ge 64`` for ``2 \le d \le 15`` (and symmetrically for ``b < 0``). The decimal exceeds the
-bound by at most a relative ``\tfrac32 10^{1-d}``. For an interval, `b` is its supremum.
-Anything else is written by `string`.
+The least decimal of `digits` significant digits that is at least the bound, written as
+`d.ddd…e±XX`.  The bound `b` is converted exactly to a rational, `e = ⌊log₁₀|b|⌋` is found
+exactly, and the decimal is ``⌈b\,10^{d-1-e}⌉\,10^{e-d+1}``, ``d`` = `digits`, with a carry
+into the next decade when the ceiling reaches ``10^d``; so it exceeds the bound by less than one
+unit in its last digit.  For an interval, `b` is its supremum.  Anything else is written by
+`string`.
 """
 fmt_upper(u::Upper; digits::Integer = 7) = _fmt_upper_big(_big_exact(u.x), digits)
 fmt_upper(x; digits::Integer = 7) = string(x)
@@ -72,11 +70,21 @@ _big_exact(x::Integer) = BigFloat(x; precision = max(64, ndigits(x; base = 2) + 
 function _fmt_upper_big(b::BigFloat, digits::Integer = 7)
     2 <= digits <= 15 || throw(ArgumentError("digits = $digits must be in 2:15"))
     isfinite(b) || return string(b)
-    p = max(64, precision(b))
-    return setprecision(BigFloat, p) do
-        ε = BigFloat(10; precision = p)^(1 - digits)
-        Printf.format(Printf.Format("%.$(digits - 1)e"), BigFloat(b; precision = p) * (b >= 0 ? 1 + ε : 1 - ε))
+    iszero(b) && return "0." * "0"^(digits - 1) * "e+00"
+    r = Rational{BigInt}(b)                       # exact
+    e = Int(floor(log10(abs(BigFloat(b)))))       # a guess, corrected below
+    pow10(j) = j >= 0 ? big(10)^j // 1 : 1 // big(10)^(-j)
+    while abs(r) >= pow10(e + 1); e += 1; end
+    while abs(r) < pow10(e); e -= 1; end
+    k = digits - 1 - e
+    scale = pow10(k)
+    m = ceil(BigInt, r * scale)                   # the least integer ≥ b 10^k
+    if abs(m) >= big(10)^digits                   # 9.99… rounded up into the next decade
+        m = cld(m, 10); e += 1
     end
+    neg = m < 0
+    s = string(abs(m))
+    return (neg ? "-" : "") * s[1] * "." * s[2:end] * "e" * (e < 0 ? "-" : "+") * lpad(string(abs(e)), 2, '0')
 end
 
 @doc raw"""
