@@ -85,6 +85,8 @@ end
     @test basename(latest_record(d, "ex.lanford"; host = "host2")) == "ex.lanford.0123abc.host2.tsv"
     @test basename(latest_record(d, "ex.lanford_noise"; host = "host1")) == "ex.lanford_noise.9999999.host1.tsv"
     @test_throws ErrorException latest_record(d, "ex.doubling"; host = "host1")
+    @test basename.(records(d, "ex.lanford"; host = "host1")) == ["ex.lanford.abc1234.host1.tsv", "ex.lanford.def5678.host1.tsv"]
+    @test isempty(records(d, "ex.doubling"; host = "host1"))
 end
 
 @testset "save_environment" begin

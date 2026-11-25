@@ -295,11 +295,24 @@ there is none. A driver writes one record per commit, so a reader of another dri
 should name the file this returns.
 """
 function latest_record(dir::AbstractString, prefix::AbstractString; host::AbstractString = gethostname())
+    fs = records(dir, prefix; host)
+    isempty(fs) && error("no record $prefix.<commit>.$host.tsv in $dir")
+    return last(fs)
+end
+
+"""
+    records(dir, prefix; host = gethostname()) -> Vector{String}
+
+Every record `dir/prefix.<commit>.<host>.tsv`, one per commit, oldest first by modification
+time, `<commit>` as in [`latest_record`](@ref); empty if there is none. A reader that needs the
+rows of every run, and not only those of the last commit, reads them in this order and lets a
+later row replace an earlier one with the same key.
+"""
+function records(dir::AbstractString, prefix::AbstractString; host::AbstractString = gethostname())
     ok(f) = startswith(f, prefix * ".") && endswith(f, ".$host.tsv") &&
             occursin(r"^[0-9a-z]+$", chop(f; head = ncodeunits(prefix) + 1, tail = ncodeunits(host) + 5))
-    fs = filter(ok, readdir(dir))
-    isempty(fs) && error("no record $prefix.<commit>.$host.tsv in $dir")
-    return joinpath(dir, fs[argmax([mtime(joinpath(dir, f)) for f in fs])])
+    fs = [joinpath(dir, f) for f in readdir(dir) if ok(f)]
+    return fs[sortperm([mtime(f) for f in fs])]
 end
 
 """
