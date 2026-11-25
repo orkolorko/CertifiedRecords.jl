@@ -175,3 +175,17 @@ end
     @test s["l"] == big(1) / 7 && precision(s["l"]) == precision(BigFloat)
     @test_throws ArgumentError summary_row("q", "nearly", 1.0)
 end
+
+@testset "fmt_upper with fewer digits, and below zero" begin
+    setprecision(BigFloat, 512) do
+        for d in (2, 3, 4, 7), x in (0.0066701783, 1 / 3, 6.02e23, 2.2250738585072014e-308, 0.012)
+            s = fmt_upper(Upper(x); digits = d)
+            v = parse(BigFloat, s; precision = 2048)
+            @test v >= big(x) && v <= big(x) * (1 + 1.5 * big(10.0)^(1 - d) + big"1e-30")
+            @test length(split(split(s, 'e')[1], '.')[2]) == d - 1
+        end
+        @test parse(BigFloat, fmt_upper(Upper(-0.0123); digits = 3)) >= big(-0.0123)
+        @test fmt_upper(Upper(0.0066701783); digits = 7) == fmt_upper(Upper(0.0066701783))
+    end
+    @test_throws ArgumentError fmt_upper(Upper(1.0); digits = 1)
+end

@@ -48,17 +48,19 @@ struct Upper{T<:Real}
 end
 
 @doc raw"""
-    fmt_upper(x) -> String
+    fmt_upper(x; digits = 7) -> String
 
-Seven significant digits of an upper bound, written so that the decimal written is at
+`digits` significant digits of an upper bound, written so that the decimal written is at
 least the bound. The bound `b` is converted to BigFloat exactly, multiplied by
-``1 + 10^{-6}``, and rounded to nearest at seven significant digits, which moves it by at
-most a relative ``5\cdot10^{-7}``; so the decimal is at least
-``b(1 + 10^{-6})(1 - 5\cdot10^{-7})(1 - 2^{-p}) \ge b`` at a precision ``p \ge 64``.
-For an interval, `b` is its supremum. Anything else is written by `string`.
+``1 + 10^{1-d}`` (by ``1 - 10^{1-d}`` when ``b < 0``), ``d`` = `digits`, and rounded to nearest at
+``d`` significant digits, which moves it by at most a relative ``\tfrac12 10^{1-d}``; so the
+decimal is at least ``b(1 + 10^{1-d})(1 - \tfrac12 10^{1-d})(1 - 2^{-p}) \ge b`` at a precision
+``p \ge 64`` for ``2 \le d \le 15`` (and symmetrically for ``b < 0``). The decimal exceeds the
+bound by at most a relative ``\tfrac32 10^{1-d}``. For an interval, `b` is its supremum.
+Anything else is written by `string`.
 """
-fmt_upper(u::Upper) = _fmt_upper_big(_big_exact(u.x))
-fmt_upper(x) = string(x)
+fmt_upper(u::Upper; digits::Integer = 7) = _fmt_upper_big(_big_exact(u.x), digits)
+fmt_upper(x; digits::Integer = 7) = string(x)
 
 function _big_exact(x::AbstractFloat)
     b = BigFloat(x; precision = max(64, precision(x)))
@@ -67,11 +69,13 @@ function _big_exact(x::AbstractFloat)
 end
 _big_exact(x::Integer) = BigFloat(x; precision = max(64, ndigits(x; base = 2) + 1))
 
-function _fmt_upper_big(b::BigFloat)
+function _fmt_upper_big(b::BigFloat, digits::Integer = 7)
+    2 <= digits <= 15 || throw(ArgumentError("digits = $digits must be in 2:15"))
     isfinite(b) || return string(b)
     p = max(64, precision(b))
     return setprecision(BigFloat, p) do
-        Printf.@sprintf("%.6e", BigFloat(b; precision = p) * (1 + big"1e-6"))
+        ε = BigFloat(10; precision = p)^(1 - digits)
+        Printf.format(Printf.Format("%.$(digits - 1)e"), BigFloat(b; precision = p) * (b >= 0 ? 1 + ε : 1 - ε))
     end
 end
 
