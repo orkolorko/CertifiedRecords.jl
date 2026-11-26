@@ -71,6 +71,26 @@ end
     end
 end
 
+@testset "delete: the request, and an error unless the reply is OK" begin
+    seen = Ref{Any}(nothing)
+    srv = HTTP.serve!("127.0.0.1", 0) do req
+        seen[] = (req.method, req.target, HTTP.header(req, "X-Dataverse-key"))
+        endswith(req.target, "/7") ? HTTP.Response(200, """{"status":"OK","data":{"message":"deleted"}}""") :
+                                      HTTP.Response(200, """{"status":"ERROR","message":"published"}""")
+    end
+    port = HTTP.port(srv)
+    tok = tempname()
+    write(tok, "key-1\n")
+    try
+        f(id) = DataverseFile(id, "a.tsv", "records", 1, "MD5", "0"^32, false)
+        @test dataverse_delete(f(7); server = "http://127.0.0.1:$port", token_file = tok) === nothing
+        @test seen[] == ("DELETE", "/api/files/7", "key-1")
+        @test_throws ErrorException dataverse_delete(f(8); server = "http://127.0.0.1:$port", token_file = tok)
+    finally
+        close(srv)
+    end
+end
+
 # Read-only calls to dataverse.harvard.edu on two published datasets; set
 # CERTIFIEDRECORDS_LIVE=1 to run them. Nothing is written to the installation.
 if get(ENV, "CERTIFIEDRECORDS_LIVE", "0") == "1"
@@ -109,7 +129,7 @@ if get(ENV, "CERTIFIEDRECORDS_LIVE_WRITE", "0") == "1"
             back = dataverse_download(listed, joinpath(dir, "back.tsv"); token_file = tok)
             @test read(back) == read(src)
         finally
-            HTTP.delete("$(DATAVERSE_HARVARD)/api/files/$(f.id)", CertifiedRecords._headers(tok))
+            dataverse_delete(f; token_file = tok)
         end
         @test !any(x -> x.id == f.id, dataverse_files(doi; version = ":draft", token_file = tok))
     end

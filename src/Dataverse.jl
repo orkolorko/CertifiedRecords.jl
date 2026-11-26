@@ -7,7 +7,7 @@
 # skips Dataverse's tabular ingest, so a TSV is not converted to its own tabular format.
 
 export DATAVERSE_HARVARD, DataverseFile, default_token_file, dataverse_files,
-       dataverse_download, dataverse_add, file_checksum
+       dataverse_download, dataverse_add, dataverse_delete, file_checksum
 # dataverse_replace is not exported until it has been run against an installation; see its
 # docstring. dataverse_add was first run on 2026-11-20, 49 files into the draft of
 # doi:10.7910/DVN/OWADFA on dataverse.harvard.edu, each downloaded back byte for byte.
@@ -184,4 +184,18 @@ function dataverse_replace(f::DataverseFile, path::AbstractString;
                            token_file::AbstractString = default_token_file())
     url = "$server/api/files/$(f.id)/replace"
     return _upload(url, path, _json_data(f.directory, description; replace = true), token_file)
+end
+
+"""
+    dataverse_delete(f::DataverseFile; server, token_file) -> nothing
+
+Delete the file `f` (by its datafile `id`, as [`dataverse_files`](@ref) lists it) from the draft
+of its dataset: `DELETE /api/files/{id}` of the native API (API Guide, "Deleting Files").  An
+error unless Dataverse answers OK.  Nothing is published.  The same call removes the file added by
+the token-gated live test of [`dataverse_add`](@ref) at its end.
+"""
+function dataverse_delete(f::DataverseFile; server::AbstractString = DATAVERSE_HARVARD,
+                          token_file::AbstractString = default_token_file())
+    _json(HTTP.request("DELETE", "$server/api/files/$(f.id)", _headers(token_file)))
+    return nothing
 end
