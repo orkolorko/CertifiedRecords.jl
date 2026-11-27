@@ -11,6 +11,8 @@ using Arblib: Arb, getinterval
     @test startswith(lines[1], "# driver on $(gethostname()), ")
     @test startswith(lines[2], "# CertifiedRecords ")
     @test occursin("julia $(VERSION)", lines[2])
+    @test occursin(", $(Threads.nthreads()) threads, ", lines[2])
+    @test endswith(lines[2], ", $(CertifiedRecords.LinearAlgebra.BLAS.get_num_threads()) BLAS threads")
     @test lines[3] == "# N = 64, rho = 3.75"
     @test_throws ArgumentError run_header(Base.Math, "driver")
 end

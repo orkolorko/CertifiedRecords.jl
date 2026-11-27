@@ -6,6 +6,7 @@ authors = ["Isaia Nisoli"]
 [deps]
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MD5 = "6ac74813-4b46-53a4-afec-0b5dc9d7885c"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
@@ -20,9 +21,10 @@ CertifiedRecordsIntervalArithmeticExt = "IntervalArithmetic"
 
 [compat]
 Arblib = "1"
-IntervalArithmetic = "1"
 HTTP = "2.16.0"
+IntervalArithmetic = "1"
 JSON = "1.13.4"
+LinearAlgebra = "1"
 MD5 = "0.2.3"
 Printf = "1.11.0"
 SHA = "1.0.0"

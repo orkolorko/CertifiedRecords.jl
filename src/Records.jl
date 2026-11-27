@@ -17,7 +17,7 @@ export run_header, Upper, fmt_upper, write_endpoint, read_endpoint,
 
 The header a driver writes above its rows, as `#` lines: the script, the machine, the
 time, the commit of the package `mod` and whether its working tree was clean, the Julia
-version and the thread count, then the parameters of the run. A run whose commit is not
+version, the number of Julia threads and of BLAS threads, then the parameters of the run. A run whose commit is not
 recorded cannot be repeated, and a run from a dirty tree says so.
 
 `mod` is the package whose code produced the numbers, e.g. `DiffusionExperiments`; the
@@ -31,7 +31,8 @@ function run_header(mod::Module, script::AbstractString; params...)
     buf = IOBuffer()
     println(buf, "# $script on $(gethostname()), ", Libc.strftime("%Y-%m-%dT%H:%M:%S", time()))
     println(buf, "# $(nameof(mod)) $commit", dirty ? " (working tree dirty)" : "",
-            ", julia ", VERSION, ", ", Threads.nthreads(), " threads")
+            ", julia ", VERSION, ", ", Threads.nthreads(), " threads, ",
+            LinearAlgebra.BLAS.get_num_threads(), " BLAS threads")
     isempty(params) || println(buf, "# ", join(["$k = $v" for (k, v) in pairs(params)], ", "))
     return String(take!(buf))
 end

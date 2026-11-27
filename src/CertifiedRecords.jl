@@ -11,6 +11,7 @@ import JSON
 import MD5
 import SHA
 import Printf
+import LinearAlgebra
 
 include("Records.jl")
 include("Dataverse.jl")
